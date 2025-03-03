@@ -7,11 +7,11 @@ I built this bot to improve my experience with [Mahjong Tracker](https://mahjong
 
 With this bot, all players in the group chat can view the scores anytime and contribute to entering them after each round. Player A no longer has to manage everything alone — yay!
 
-_To prospective employers taking a look at my personal project_:  
+_To prospective employers_:  
 
 This project is a practical, no-frills solution designed to meet my needs. While I prioritised functionality over long-term maintainability, I'm always open to improving the code if needed.
 
-_To Riichi players that are interested in using the source code_:  
+_To Riichi players interested in this project_:  
 
 The process flow is customized to my needs, but you're free to modify the code however you like. Enjoy!
 

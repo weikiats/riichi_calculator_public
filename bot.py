@@ -29,21 +29,21 @@ logger = logging.getLogger(__name__)
 END = ConversationHandler.END
 SELECT_SESSION_ACTION, GAME_RECORDS, END_SESSION, \
 ROUND_RECORDS, MODE, PLAYERS, POINTS_VALUE, SELECT_GAME_ACTION, DELETE_ROUND, FINISH_GAME, FINAL_POINTS, \
-ADD_ROUND_RESULT, ADD_ROUND_WINNER, ADD_ROUND_HAN, ADD_ROUND_FU, ADD_ROUND_LOSER, ADD_ROUND_DRAW, ADD_ROUND_RIICHI, \
+ADD_ROUND_RESULT, ADD_ROUND_WINNER, ADD_ROUND_HAN, ADD_ROUND_FU, ADD_ROUND_LOSER, ADD_ROUND_NAGASHI, ADD_ROUND_TENPAI, ADD_ROUND_RIICHI, \
 ADD_ROUND_CHOMBO, ADD_ROUND_CHOMBO_POINTS, CHOMBO_PENALTY, \
-DRAFT_ROUND, DRAFT_ROUND_TEXT, RESULT, WINNER, HAN, FU, LOSER, IN_TENPAI, DECLARED_RIICHI, POINT_RECORDS, PREV_GAME_TRACKERS, \
+DRAFT_ROUND, DRAFT_ROUND_TEXT, RESULT, WINNER, HAN, FU, LOSER, NAGASHI_MANGAN, IN_TENPAI, DECLARED_RIICHI, POINT_RECORDS, PREV_GAME_TRACKERS, \
 CURRENT_WIND, CURRENT_DEALER, CURRENT_DEALER_CONSEC, CURRENT_RIICHI, CURRENT_HONBA, \
-TSUMO, RON, DEALER, NONDEALER = range(41)
+TSUMO, RON, DEALER, NONDEALER = range(43)
 
 winds = ["East", "South", "West", "North"]
 select_session_options_keyboard = ReplyKeyboardMarkup([
     ["Start new game"],
     ["End session"]
-], is_persistent=True)
+])
 select_game_options_keyboard = ReplyKeyboardMarkup([
     ["Add round", "Delete last round"],
     ["Show game history", "Finish game"]
-], is_persistent=True)
+])
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.chat_data[GAME_RECORDS] = []
@@ -146,7 +146,7 @@ async def add_round_result(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         return ADD_ROUND_WINNER
 
     elif input == "Draw":
-        text += "\n\nWho in Tenpai?"
+        text += "\n\nWho Nagashi Mangan?"
         keyboard = InlineKeyboardMarkup([
             buttons,
             [InlineKeyboardButton(text="None", callback_data="None")],
@@ -154,7 +154,7 @@ async def add_round_result(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         ])
         await update.callback_query.edit_message_text(text=text, reply_markup=keyboard, parse_mode="HTML")
 
-        return ADD_ROUND_DRAW
+        return ADD_ROUND_NAGASHI
 
     elif input == "Chombo":
         text += "\n\nWho Chombo?"
@@ -390,7 +390,73 @@ async def add_round_loser(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         
         return await handle_add_round_cancel(update, context)
     
-async def add_round_draw(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def add_round_nagashi(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    # nagashi mangan implemented here is considered a bonus payment, not a proper win
+    # payment is not affected by honba / existing riichi
+    # winds will move if dealer is not in tenpai, even if dealer nagashi mangan
+    # any successful nagashi mangan will cancel out regular tenpai settlements 
+    # (https://riichi.wiki/Nagashi_mangan)
+    input = update.callback_query.data
+    await update.callback_query.answer()
+    round = context.chat_data[DRAFT_ROUND]
+
+    if NAGASHI_MANGAN not in round:
+        round[NAGASHI_MANGAN] = []
+
+    if input != "Cancel":
+
+        if input != "None":
+            round[NAGASHI_MANGAN].append(int(input))
+        
+            if len(round[NAGASHI_MANGAN]) == len(context.chat_data[PLAYERS]):
+                round[DRAFT_ROUND_TEXT] += helper_nagashi_text(context)
+                text = round[DRAFT_ROUND_TEXT] + "\n\nWho in Tenpai?"
+                keyboard = helper_nagashi_button(context, False, True)
+                await update.callback_query.edit_message_text(text=text, reply_markup=keyboard, parse_mode="HTML")
+                
+                return ADD_ROUND_TENPAI
+            
+            else:
+                text = round[DRAFT_ROUND_TEXT] + helper_nagashi_text(context) +\
+                    "\n\nWho else Nagashi Mangan?"
+                keyboard = helper_nagashi_button(context, True, True)
+                await update.callback_query.edit_message_text(text=text, reply_markup=keyboard, parse_mode="HTML")
+
+                return ADD_ROUND_NAGASHI
+        
+        else:
+            if round[NAGASHI_MANGAN]:
+                round[DRAFT_ROUND_TEXT] += helper_nagashi_text(context)
+            text = round[DRAFT_ROUND_TEXT] + "\n\nWho in Tenpai?"
+            keyboard = helper_nagashi_button(context, False, True)
+            await update.callback_query.edit_message_text(text=text, reply_markup=keyboard, parse_mode="HTML")
+
+            return ADD_ROUND_TENPAI
+    
+    else:
+        
+        return await handle_add_round_cancel(update, context)
+
+def helper_nagashi_text(context: ContextTypes.DEFAULT_TYPE) -> str:
+    text = ", ".join([context.chat_data[PLAYERS][i] for i in context.chat_data[DRAFT_ROUND][NAGASHI_MANGAN]]) \
+        if context.chat_data[DRAFT_ROUND][NAGASHI_MANGAN] else "None"
+    return f"\nNagashi Mangan: <u>{text}</u>"
+
+def helper_nagashi_button(context: ContextTypes.DEFAULT_TYPE, remove_nagashi_players: bool, has_none: bool):
+    players = []
+    for i, player in enumerate(context.chat_data[PLAYERS]):
+        if not remove_nagashi_players or i not in context.chat_data[DRAFT_ROUND][NAGASHI_MANGAN]:
+            players.append(InlineKeyboardButton(text=player, callback_data=i))
+    buttons = [players]
+
+    if has_none:
+        buttons.append([InlineKeyboardButton(text="None", callback_data="None")])
+
+    buttons.append([InlineKeyboardButton(text="Cancel", callback_data="Cancel")])
+
+    return InlineKeyboardMarkup(buttons)
+
+async def add_round_tenpai(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     input = update.callback_query.data
     await update.callback_query.answer()
     round = context.chat_data[DRAFT_ROUND]
@@ -404,25 +470,25 @@ async def add_round_draw(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             round[IN_TENPAI].append(int(input))
         
             if len(round[IN_TENPAI]) == len(context.chat_data[PLAYERS]):
-                round[DRAFT_ROUND_TEXT] += helper_draw_text(context)
+                round[DRAFT_ROUND_TEXT] += helper_tenpai_text(context)
                 text = round[DRAFT_ROUND_TEXT] + "\n\nWho declared Riichi?"
-                keyboard = helper_draw_button(context, False, True)
+                keyboard = helper_tenpai_button(context, False, True)
                 await update.callback_query.edit_message_text(text=text, reply_markup=keyboard, parse_mode="HTML")
                 
                 return ADD_ROUND_RIICHI
             
             else:
-                text = round[DRAFT_ROUND_TEXT] + helper_draw_text(context) +\
+                text = round[DRAFT_ROUND_TEXT] + helper_tenpai_text(context) +\
                     "\n\nWho else in Tenpai?"
-                keyboard = helper_draw_button(context, True, True)
+                keyboard = helper_tenpai_button(context, True, True)
                 await update.callback_query.edit_message_text(text=text, reply_markup=keyboard, parse_mode="HTML")
 
-                return ADD_ROUND_DRAW
+                return ADD_ROUND_TENPAI
         
         else:
-            round[DRAFT_ROUND_TEXT] += helper_draw_text(context)
+            round[DRAFT_ROUND_TEXT] += helper_tenpai_text(context)
             text = round[DRAFT_ROUND_TEXT] + "\n\nWho declared Riichi?"
-            keyboard = helper_draw_button(context, False, True)
+            keyboard = helper_tenpai_button(context, False, True)
             await update.callback_query.edit_message_text(text=text, reply_markup=keyboard, parse_mode="HTML")
 
             return ADD_ROUND_RIICHI
@@ -431,12 +497,12 @@ async def add_round_draw(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         
         return await handle_add_round_cancel(update, context)
     
-def helper_draw_text(context: ContextTypes.DEFAULT_TYPE) -> str:
+def helper_tenpai_text(context: ContextTypes.DEFAULT_TYPE) -> str:
     text = ", ".join([context.chat_data[PLAYERS][i] for i in context.chat_data[DRAFT_ROUND][IN_TENPAI]]) \
         if context.chat_data[DRAFT_ROUND][IN_TENPAI] else "None"
     return f"\nIn Tenpai: <u>{text}</u>"
 
-def helper_draw_button(context: ContextTypes.DEFAULT_TYPE, remove_tenpai_players: bool, has_none: bool):
+def helper_tenpai_button(context: ContextTypes.DEFAULT_TYPE, remove_tenpai_players: bool, has_none: bool):
     players = []
     for i, player in enumerate(context.chat_data[PLAYERS]):
         if not remove_tenpai_players or i not in context.chat_data[DRAFT_ROUND][IN_TENPAI]:
@@ -587,13 +653,21 @@ def helper_finish_points_4p(context: ContextTypes.DEFAULT_TYPE):
     
     if round[RESULT] == "Draw":
         player_count = len(players)
+        nagashi_count = len(round[NAGASHI_MANGAN])
         tenpai_count = len(round[IN_TENPAI])
-        
-        if tenpai_count not in [0, player_count]:
+
+        if nagashi_count not in [0, player_count]:
+            for nagashi_player in round[NAGASHI_MANGAN]:
+                data[nagashi_player] += 12000 if nagashi_player == context.chat_data[CURRENT_DEALER] else 8000
+                for p, player in enumerate(players):
+                    if p != nagashi_player:
+                        data[p] -= 4000 if nagashi_player == context.chat_data[CURRENT_DEALER] or p == context.chat_data[CURRENT_DEALER] else 2000
+
+        elif tenpai_count not in [0, player_count] and nagashi_count == 0:
             points_tenpai = 3000 // tenpai_count
             points_non_tenpai = -3000 // (player_count - tenpai_count)
             for i in data:
-                data[i] = points_tenpai if i in round[IN_TENPAI] else points_non_tenpai
+                data[i] += points_tenpai if i in round[IN_TENPAI] else points_non_tenpai
 
         for i in round[DECLARED_RIICHI]:
             data[i] -= 1000
@@ -1176,14 +1250,14 @@ async def end_session_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE
         for game in context.chat_data[GAME_RECORDS]:
             for i, player in enumerate(game[PLAYERS]):
                 if player in data:
-                    data[player] += round(game[FINAL_POINTS][i] / 1000 * game[POINTS_VALUE], 2)
+                    data[player] += round(game[FINAL_POINTS][i] * game[POINTS_VALUE] / 1000, 2)
                 else:
-                    data[player] = round(game[FINAL_POINTS][i] / 1000 * game[POINTS_VALUE], 2)
+                    data[player] = round(game[FINAL_POINTS][i] * game[POINTS_VALUE] / 1000, 2)
 
         text = "<b>Overall calculation</b>\n\n"
         data_sorted = sorted(data.items(), key=lambda item: item[1])
         for player, amount in data_sorted:
-            text += f"{player}: {amount}\n"
+            text += f"{player}: {amount:.2f}\n"
         text += "\n"
 
         start = 0
@@ -1227,7 +1301,8 @@ def main() -> None:
             ADD_ROUND_HAN: [CallbackQueryHandler(add_round_han)],
             ADD_ROUND_FU: [CallbackQueryHandler(add_round_fu)],
             ADD_ROUND_LOSER: [CallbackQueryHandler(add_round_loser)],
-            ADD_ROUND_DRAW: [CallbackQueryHandler(add_round_draw)],
+            ADD_ROUND_NAGASHI: [CallbackQueryHandler(add_round_nagashi)],
+            ADD_ROUND_TENPAI: [CallbackQueryHandler(add_round_tenpai)],
             ADD_ROUND_RIICHI: [CallbackQueryHandler(add_round_riichi)],
             ADD_ROUND_CHOMBO: [CallbackQueryHandler(add_round_chombo)],
             ADD_ROUND_CHOMBO_POINTS: [CallbackQueryHandler(add_round_chombo_points)]

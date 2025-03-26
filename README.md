@@ -13,7 +13,7 @@ This project is a practical, no-frills solution designed to meet my needs. While
 
 _To Riichi players interested in this project_:  
 
-The process flow is customized to my needs, but you're free to modify the code however you like. Enjoy!
+The process flow is customised to my needs, but you're free to modify the code however you like. Enjoy!
 
 https://github.com/user-attachments/assets/ef04bcd1-22af-4fe2-b7d4-343336b3d741  
 https://github.com/user-attachments/assets/f3e7e200-2074-46b8-ae7a-3e380d8ef391  
